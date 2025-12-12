@@ -7,29 +7,8 @@ Two tiny static web pages to help with **manual filament/color changes** during 
 
 No companion app. No backend. Your G-code never leaves your machine.
 
-## Live Pages
-
-After GitHub Pages is enabled:
-
 - Generator: https://downthecrop.github.io/color-change-gcode/index.html
 - Viewer:    https://downthecrop.github.io/color-change-gcode/viewer.html
-
-## Repo Layout
-
-Put both files in docs/:
-
-docs/
-  generator.html
-  viewer.html
-README.md
-
-## Enable GitHub Pages
-
-Repo -> Settings -> Pages
-
-- Source: Deploy from a branch
-- Branch: main
-- Folder: /docs
 
 ## OrcaSlicer Setup (required for color names)
 
@@ -39,9 +18,11 @@ In OrcaSlicer:
 
 Printer Settings -> Machine G-code -> On filament change:
 
+```
 ;CHANGE_FILAMENT from={filament_preset[previous_extruder]} to={filament_preset[next_extruder]}
 M117 CHANGE TO {filament_preset[next_extruder]}
 M25
+```
 
 Notes:
 - The filament preset names are what show up in the checklist (e.g. Grey, Blue, Black, WhitePLA).
@@ -59,18 +40,6 @@ Notes:
 ### Viewer
 - Opens a checklist from the encoded URL hash: viewer.html#d=...
 - Checkboxes persist using localStorage keyed to the checklist content, so you can refresh or switch apps without losing your place.
-
-## Local Testing (optional)
-
-If you want to test without Pages:
-
-python3 -m http.server 8000
-
-Then open:
-- http://localhost:8000/docs/generator.html
-- http://localhost:8000/docs/viewer.html
-
-(Use a server; don’t open as file:// if your browser blocks features.)
 
 ## Troubleshooting
 
