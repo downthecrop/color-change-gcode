@@ -21,7 +21,6 @@
     .top {
       position: sticky; top: 0; z-index: 50;
       backdrop-filter: blur(12px);
-      background: linear-gradient(to bottom, rgba(11,12,16,.90), rgba(11,12,16,.70));
       border-bottom: 1px solid var(--border);
       padding: 14px 0 10px;
     }
@@ -67,6 +66,7 @@
       font-size: 12px; color: var(--text);
       font-weight: 900;
     }
+    .pillRow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .progress {
       display: flex; align-items: center; gap: 10px;
       font-size: 12px; color: var(--muted);
@@ -107,6 +107,14 @@
       font-size: 16px; font-weight: 1000; letter-spacing: .3px;
       text-transform: uppercase;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .loadRow { display:flex; align-items:center; gap:8px; min-width:0; }
+    .swatch {
+      width: 14px; height: 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(232,233,240,.35);
+      flex-shrink: 0;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.35);
     }
     .from {
       font-size: 12px; color: var(--muted2);
@@ -164,21 +172,28 @@
     }
     .qrHead { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
     .qrTitle { font-weight: 1000; }
-    canvas { display:block; margin:0 auto; border-radius:12px; background:#fff; }
+    canvas {
+      display:block;
+      margin:0 auto;
+      border-radius:12px;
+      background:#fff;
+      width:100%;
+      max-width:320px;
+      height:auto;
+    }
     .footerNote { margin-top: 10px; font-size: 11px; color: var(--muted2); word-break: break-all; text-align:center; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="top">
-      <div class="row">
+      <div class="step">
         <div>
           <div class="title" id="title">G-code Checklist</div>
           <div class="sub" id="sub">Open via <span class="mono">#d=...</span></div>
         </div>
         <div class="btns">
-          <button class="primary" id="btnNext" disabled>Next</button>
-          <button id="btnShareQR" disabled>Share QR</button>
+          <button id="btnShareQR" disabled>Share QR Code</button>
           <button class="danger" id="btnReset" disabled>Reset</button>
         </div>
       </div>
@@ -190,7 +205,10 @@
           <span id="progText">0 / 0</span>
           <div class="bar"><div id="progBar"></div></div>
         </div>
-        <div class="pill" id="pill">LOAD: —</div>
+        <div class="pillRow">
+          <div class="pill" id="startPill" style="display:none"></div>
+          <div class="pill" id="pill">LOAD: —</div>
+        </div>
       </div>
       <div class="list" id="list"></div>
       <div class="empty" id="empty" style="display:none"></div>
@@ -210,7 +228,7 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.0/qrcode.min.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
 
@@ -284,23 +302,85 @@
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
         .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
+    function startColorName(steps) {
+      if (!Array.isArray(steps)) return '';
+      for (const s of steps) {
+        const from = (s.from || '').trim();
+        if (from) return from;
+      }
+      return '';
+    }
+
+    function guessColor(name) {
+      const n = (name || '').toLowerCase();
+      const palette = [
+        [/black|onyx|carbon/, '#0f1118'],
+        [/white|ivory|snow|pearl/, '#f0f2f7'],
+        [/gray|grey|slate|graphite|ash|smoke/, '#9ca3af'],
+        [/silver|chrome|steel/, '#c8cdd4'],
+        [/red|crimson|scarlet|ruby/, '#ef4444'],
+        [/orange|amber|tangerine|coral/, '#f97316'],
+        [/yellow|gold|mustard|sun/, '#facc15'],
+        [/green|lime|mint|emerald|jade|olive/, '#22c55e'],
+        [/blue|azure|navy|cobalt|cyan|teal|turquoise|aqua/, '#3b82f6'],
+        [/purple|violet|magenta|plum|lavender/, '#a855f7'],
+        [/pink|rose|fuchsia/, '#ec4899'],
+        [/brown|mocha|coffee|choco|walnut|wood/, '#a16246'],
+        [/bronze|copper/, '#b45309'],
+        [/clear|transparent/, '#d1d5db']
+      ];
+      for (const [re, color] of palette) {
+        if (re.test(n)) return color;
+      }
+      return '#7c5cff';
+    }
+    function textColorFor(hex) {
+      const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+      if (!m) return '#0b0c10';
+      const v = m[1];
+      const r = parseInt(v.slice(0,2), 16);
+      const g = parseInt(v.slice(2,4), 16);
+      const b = parseInt(v.slice(4,6), 16);
+      const lum = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+      return lum > 0.6 ? '#0b0c10' : '#f8fafc';
+    }
+
+    function qrSizeFor(canvasEl) {
+      const parentWidth = canvasEl.parentElement ? canvasEl.parentElement.getBoundingClientRect().width : 320;
+      const usable = Math.max(200, Math.floor(parentWidth - 32));
+      return Math.min(320, usable);
+    }
+
+    async function drawQr(canvasEl, text) {
+      const size = qrSizeFor(canvasEl);
+      canvasEl.width = canvasEl.height = size;
+      await QRCode.toCanvas(canvasEl, text, { errorCorrectionLevel: 'M', margin: 1, width: size });
+    }
 
     function buildStepRow(step, checked, onToggle) {
       const row = el('div', 'step');
       row.dataset.idx = String(step.i);
 
       const idx = el('div', 'idx', String(step.i));
+      const loadText = (step.to || '(unknown)').trim();
+      const color = guessColor(loadText);
+      idx.style.background = color;
+      idx.style.borderColor = 'rgba(124,92,255,.45)';
+      idx.style.color = textColorFor(color);
+
       const meta = el('div', 'meta');
 
-      const load = el('div', 'load', (step.to || '(unknown)').toUpperCase());
+      const load = el('div', 'load', loadText.toUpperCase());
+      const loadRow = el('div', 'loadRow');
+      loadRow.appendChild(load);
 
       if (step.from) {
         const from = el('div', 'from');
         from.innerHTML = '<span style="text-decoration:line-through;">' + escapeHtml(step.from) + '</span>';
         meta.appendChild(from);
-        meta.insertBefore(load, from);
+        meta.insertBefore(loadRow, from);
       } else {
-        meta.appendChild(load);
+        meta.appendChild(loadRow);
       }
 
       const tiny = el('div', 'tiny');
@@ -350,18 +430,8 @@
         if (row) row.classList.add('next');
       }
 
-      $('btnNext').disabled = nextIdx < 0;
       $('btnReset').disabled = false;
       $('btnShareQR').disabled = false;
-    }
-
-    function scrollToNext(payload, checkedArr) {
-      let nextIdx = -1;
-      for (let i=0;i<payload.steps.length;i++){ if(!checkedArr[i]){ nextIdx=i; break; } }
-      if (nextIdx < 0) return;
-      const id = payload.steps[nextIdx].i;
-      const row = $('list').querySelector('.step[data-idx="' + String(id) + '"]');
-      if (row) row.scrollIntoView({ behavior:'smooth', block:'center' });
     }
 
     function normalizePayload(p) {
@@ -403,6 +473,23 @@
         $('title').textContent = payload.title || 'Checklist';
         $('sub').textContent = payload.source ? ('Source: ' + payload.source) : '';
 
+        const start = startColorName(payload.steps);
+        const startPill = $('startPill');
+        startPill.innerHTML = '';
+        if (start) {
+          const sw = document.createElement('span');
+          sw.className = 'swatch';
+          sw.style.width = sw.style.height = '12px';
+          sw.style.background = guessColor(start);
+          sw.style.marginRight = '6px';
+          sw.style.flexShrink = '0';
+          startPill.appendChild(sw);
+          startPill.append('START: ' + start.toUpperCase());
+          startPill.style.display = 'inline-flex';
+        } else {
+          startPill.style.display = 'none';
+        }
+
         const id = await sha256Hex(token);
         const stateKey = 'gcodeChecklistState:' + id;
 
@@ -433,8 +520,6 @@
 
         updateProgressUI(payload, state.checked);
 
-        $('btnNext').addEventListener('click', () => scrollToNext(payload, state.checked));
-
         $('btnReset').addEventListener('click', () => {
           if (!confirm('Reset checkmarks for this checklist?')) return;
           state.checked = new Array(payload.steps.length).fill(false);
@@ -444,15 +529,26 @@
           toast('Reset.');
         });
 
+        function closeQrModal() {
+          $('qrModal').classList.remove('show');
+          $('qrModal').setAttribute('aria-hidden', 'true');
+        }
+
         $('btnShareQR').addEventListener('click', async () => {
           const url = location.href;
           $('qrUrl').textContent = url;
           $('qrModal').classList.add('show');
-          await QRCode.toCanvas($('qrCanvas'), url, { errorCorrectionLevel: 'M', margin: 1, width: 320 });
+          $('qrModal').setAttribute('aria-hidden', 'false');
+          try {
+            await drawQr($('qrCanvas'), url);
+          } catch (err) {
+            toast('Failed to build QR code.');
+          }
         });
 
-        $('btnCloseQR').addEventListener('click', () => $('qrModal').classList.remove('show'));
-        $('qrModal').addEventListener('click', (e) => { if (e.target === $('qrModal')) $('qrModal').classList.remove('show'); });
+        $('btnCloseQR').addEventListener('click', closeQrModal);
+        $('qrModal').addEventListener('click', (e) => { if (e.target === $('qrModal')) closeQrModal(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeQrModal(); });
 
         window.addEventListener('hashchange', () => location.reload());
         window.addEventListener('focus', () => updateProgressUI(payload, state.checked));

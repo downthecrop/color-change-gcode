@@ -70,12 +70,21 @@
     .v{margin-top:6px;font-size:13px;font-weight:900;word-break:break-word}
     .qrWrap{display:grid; grid-template-columns: 340px 1fr; gap:12px; align-items:center;}
     @media (max-width: 780px){ .qrWrap{grid-template-columns:1fr} }
-    canvas{background:#fff;border-radius:16px;display:block;margin:0 auto}
+    canvas{
+      background:#fff;
+      border-radius:16px;
+      display:block;
+      margin:0 auto;
+      width:100%;
+      max-width:320px;
+      height:auto;
+    }
     .linkBox{
       padding:12px;border-radius:16px;border:1px solid rgba(232,233,240,.10);
       background:rgba(15,17,24,.6); display:grid; gap:10px;
     }
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;color:rgba(232,233,240,.85)}
+    .linkText{word-break:break-all;overflow-wrap:anywhere;line-height:1.4}
     .warn{color:rgba(251,113,133,.92);font-weight:1000}
     .oktxt{color:rgba(45,212,191,.92);font-weight:1000}
     .toast{
@@ -123,7 +132,6 @@
       <div class="body">
         <div class="row">
           <input id="file" type="file" accept=".gcode,.gc,.g" class="in" />
-          <input id="viewerPath" class="in" placeholder="Viewer URL e.g. https://downthecrop.github.io/color-change-gcode/viewer.html" />
           <button id="btnMake" class="primary" disabled>Generate QR</button>
         </div>
 
@@ -151,7 +159,7 @@
           </div>
           <div class="linkBox">
             <div style="font-weight:1000">Share link</div>
-            <div class="mono" id="linkText"></div>
+            <div class="mono linkText" id="linkText"></div>
             <div class="row" style="justify-content:flex-start">
               <button id="btnOpen" class="ok" disabled>Open viewer</button>
               <button id="btnCopy">Copy link</button>
@@ -359,8 +367,14 @@ M25</div>
       return out;
     }
 
-    function defaultViewerUrl() {
-      return 'https://downthecrop.github.io/color-change-gcode/viewer.html';
+    function viewerBaseUrl() {
+      const fallback = 'https://downthecrop.github.io/color-change-gcode/viewer.html';
+      try {
+        if (location.protocol === 'file:') return fallback;
+        return new URL('viewer.html', location.href).toString().replace(/[#?].*$/, '');
+      } catch {
+        return fallback;
+      }
     }
 
     async function main() {
@@ -369,26 +383,17 @@ M25</div>
       $('supportPill').style.background = supportsDeflate ? 'rgba(45,212,191,.14)' : 'rgba(251,113,133,.14)';
       $('supportPill').style.borderColor = supportsDeflate ? 'rgba(45,212,191,.32)' : 'rgba(251,113,133,.32)';
 
-      $('viewerPath').value = defaultViewerUrl();
-
       let fileName = '';
       let fileText = '';
 
-      $('file').addEventListener('change', async (e) => {
-        const f = e.target.files && e.target.files[0];
-        if (!f) return;
-        fileName = f.name || 'print.gcode';
-        fileText = await f.text();
-        $('btnMake').disabled = false;
-        $('steps').textContent = '—';
-        $('palette').textContent = '—';
-        $('notes').textContent = 'Ready.';
-        $('qrArea').style.display = 'none';
-      });
-
-      $('btnMake').addEventListener('click', async () => {
+      async function generate() {
         try {
           if (!fileText) return;
+
+          $('btnMake').disabled = true;
+          $('btnOpen').disabled = true;
+          $('notes').textContent = 'Parsing…';
+          $('qrArea').style.display = 'none';
 
           const steps = parseGcode(fileText, { dedupeLines: 6, bindWindow: 50 });
           $('steps').textContent = String(steps.length);
@@ -412,13 +417,18 @@ M25</div>
 
           const token = await encodePayload(payload);
 
-          const viewerBase = ($('viewerPath').value.trim() || defaultViewerUrl()).replace(/#.*$/, '');
+          const viewerBase = viewerBaseUrl();
           const shareUrl = viewerBase + '#d=' + token;
 
           $('linkText').textContent = shareUrl;
           $('qrArea').style.display = 'grid';
 
-          await QRCode.toCanvas($('qr'), shareUrl, { errorCorrectionLevel: 'M', margin: 1, width: 320 });
+          const qrCanvas = $('qr');
+          const qrBoxWidth = qrCanvas.parentElement?.getBoundingClientRect().width || 320;
+          const qrSize = Math.min(320, Math.max(220, Math.floor(qrBoxWidth - 12)));
+          qrCanvas.width = qrCanvas.height = qrSize;
+
+          await QRCode.toCanvas(qrCanvas, shareUrl, { errorCorrectionLevel: 'M', margin: 1, width: qrSize });
 
           $('btnOpen').disabled = false;
           $('btnOpen').onclick = () => window.open(shareUrl, '_blank', 'noopener,noreferrer');
@@ -434,8 +444,24 @@ M25</div>
         } catch (err) {
           $('qrArea').style.display = 'none';
           $('notes').innerHTML = '<span class="warn">' + (err && err.message ? err.message : String(err)) + '</span>';
+        } finally {
+          $('btnMake').disabled = !fileText;
         }
+      }
+
+      $('file').addEventListener('change', async (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        fileName = f.name || 'print.gcode';
+        fileText = await f.text();
+        $('steps').textContent = '—';
+        $('palette').textContent = '—';
+        $('notes').textContent = 'Parsing…';
+        $('qrArea').style.display = 'none';
+        await generate();
       });
+
+      $('btnMake').addEventListener('click', generate);
     }
 
     main();
