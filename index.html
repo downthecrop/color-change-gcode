@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>G-code Checklist QR Generator</title>
+  <style>
+    :root{
+      --bg:#0b0c10; --card:#12141c; --card2:#0f1118;
+      --text:#e8e9f0; --muted:rgba(232,233,240,.7);
+      --border:rgba(232,233,240,.12); --accent:#7c5cff; --ok:#2dd4bf; --bad:#fb7185;
+    }
+    html,body{height:100%;margin:0;background:
+      radial-gradient(1200px 800px at 15% 10%, rgba(124,92,255,.25), transparent 45%),
+      radial-gradient(900px 600px at 85% 20%, rgba(45,212,191,.16), transparent 45%),
+      var(--bg);
+      color:var(--text);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    }
+    .wrap{max-width:920px;margin:0 auto;padding:18px 14px 64px;}
+    .top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+    .h1{font-weight:900;font-size:18px;letter-spacing:.2px}
+    .sub{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.35}
+    .card{
+      margin-top:14px;
+      background:linear-gradient(to bottom, rgba(18,20,28,.88), rgba(18,20,28,.78));
+      border:1px solid var(--border); border-radius:18px;
+      box-shadow:0 18px 50px rgba(0,0,0,.35);
+      overflow:hidden;
+    }
+    .head{padding:14px;border-bottom:1px solid var(--border);background:rgba(15,17,24,.65)}
+    .body{padding:14px;display:grid;gap:12px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .in{
+      flex:1; min-width:260px;
+      padding:10px 12px; border-radius:14px;
+      border:1px solid var(--border);
+      background:rgba(18,20,28,.65);
+      color:var(--text); outline:none; font-weight:800;
+    }
+    .in::placeholder{color:rgba(232,233,240,.35);font-weight:700}
+    button{
+      appearance:none; border:1px solid var(--border);
+      background:rgba(18,20,28,.75); color:var(--text);
+      padding:10px 12px; border-radius:14px;
+      font-weight:900; cursor:pointer;
+      transition:transform .06s ease, background .2s ease, border-color .2s ease;
+    }
+    button:hover{background:rgba(18,20,28,.95);border-color:rgba(232,233,240,.18)}
+    button:active{transform:translateY(1px)}
+    button.primary{background:rgba(124,92,255,.2);border-color:rgba(124,92,255,.35)}
+    button.ok{background:rgba(45,212,191,.14);border-color:rgba(45,212,191,.32)}
+    button.bad{background:rgba(251,113,133,.14);border-color:rgba(251,113,133,.32)}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:8px 10px;border-radius:14px;
+      background:rgba(124,92,255,.12);
+      border:1px solid rgba(124,92,255,.25);
+      font-size:12px;color:var(--text);
+    }
+    .kv{display:flex;gap:10px;flex-wrap:wrap}
+    .kv > div{
+      flex:1; min-width:220px;
+      padding:12px; border-radius:16px;
+      border:1px solid rgba(232,233,240,.10);
+      background:rgba(15,17,24,.6);
+    }
+    .k{color:var(--muted);font-size:11px;font-weight:900;letter-spacing:.4px}
+    .v{margin-top:6px;font-size:13px;font-weight:900;word-break:break-word}
+    .qrWrap{display:grid; grid-template-columns: 340px 1fr; gap:12px; align-items:center;}
+    @media (max-width: 780px){ .qrWrap{grid-template-columns:1fr} }
+    canvas{background:#fff;border-radius:16px;display:block;margin:0 auto}
+    .linkBox{
+      padding:12px;border-radius:16px;border:1px solid rgba(232,233,240,.10);
+      background:rgba(15,17,24,.6); display:grid; gap:10px;
+    }
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;color:rgba(232,233,240,.85)}
+    .warn{color:rgba(251,113,133,.92);font-weight:1000}
+    .oktxt{color:rgba(45,212,191,.92);font-weight:1000}
+    .toast{
+      position:fixed; left:50%; transform:translateX(-50%);
+      bottom:16px; padding:10px 12px; border-radius:14px;
+      background:rgba(18,20,28,.92);
+      border:1px solid rgba(232,233,240,.14);
+      box-shadow:0 16px 50px rgba(0,0,0,.45);
+      font-size:12px; opacity:0; pointer-events:none; transition:opacity .18s ease;
+      max-width:min(680px, calc(100vw - 28px)); text-align:center;
+    }
+    .toast.show{opacity:1}
+    .setup{
+      margin-top:14px;
+      padding:12px;border-radius:16px;border:1px solid rgba(232,233,240,.10);
+      background:rgba(15,17,24,.6);
+    }
+    .setupTitle{font-weight:1000;margin-bottom:8px}
+    .setupText{color:rgba(232,233,240,.75);font-size:12px;line-height:1.5}
+    .setupCode{
+      margin-top:10px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      font-size:12px;color:rgba(232,233,240,.85);
+      white-space:pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="h1">G-code Checklist QR Generator</div>
+        <div class="sub">
+          Pick a <span class="pill">.gcode</span> file. Parsing happens locally. Generates a link to
+          <span class="pill">viewer.html#d=...</span> and a QR code to scan.
+        </div>
+      </div>
+      <div class="pill" id="supportPill">Deflate: checking…</div>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <div style="font-weight:1000">Input</div>
+      </div>
+      <div class="body">
+        <div class="row">
+          <input id="file" type="file" accept=".gcode,.gc,.g" class="in" />
+          <input id="viewerPath" class="in" placeholder="Viewer URL e.g. https://downthecrop.github.io/color-change-gcode/viewer.html" />
+          <button id="btnMake" class="primary" disabled>Generate QR</button>
+        </div>
+
+        <div class="kv">
+          <div>
+            <div class="k">Detected steps</div>
+            <div class="v" id="steps">—</div>
+          </div>
+          <div>
+            <div class="k">Palette (TO colors)</div>
+            <div class="v" id="palette">—</div>
+          </div>
+          <div>
+            <div class="k">Notes</div>
+            <div class="v" id="notes">—</div>
+          </div>
+        </div>
+
+        <div class="qrWrap" id="qrArea" style="display:none">
+          <div>
+            <canvas id="qr" width="320" height="320"></canvas>
+            <div style="text-align:center;margin-top:10px;color:var(--muted);font-size:12px">
+              Scan to open checklist
+            </div>
+          </div>
+          <div class="linkBox">
+            <div style="font-weight:1000">Share link</div>
+            <div class="mono" id="linkText"></div>
+            <div class="row" style="justify-content:flex-start">
+              <button id="btnOpen" class="ok" disabled>Open viewer</button>
+              <button id="btnCopy">Copy link</button>
+            </div>
+            <div class="sub">
+              Checkmarks persist per-device via <span class="pill">localStorage</span>.
+            </div>
+          </div>
+        </div>
+
+        <div class="setup">
+          <div class="setupTitle">OrcaSlicer setup</div>
+          <div class="setupText">
+            Printer Settings → Machine G-code → <b>On filament change</b>:
+          </div>
+          <div class="setupCode">;CHANGE_FILAMENT from={filament_preset[previous_extruder]} to={filament_preset[next_extruder]}
+M117 CHANGE TO {filament_preset[next_extruder]}
+M25</div>
+          <div class="setupText" style="margin-top:10px;color:rgba(232,233,240,.65)">
+            Make sure your filament presets are named exactly how you want them to appear (Grey, Blue, etc).
+            This generator binds that marker to the next pause (M25/M0/M600).
+          </div>
+        </div>
+
+        <div class="sub">
+          Parsing looks for:
+          <span class="mono">;CHANGE_FILAMENT from=... to=...</span> and/or
+          <span class="mono">M117 CHANGE TO ...</span>
+          bound to the next pause command.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.0/qrcode.min.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function toast(msg) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(toast._tm);
+      toast._tm = setTimeout(() => t.classList.remove('show'), 1300);
+    }
+
+    function b64urlEncode(bytes) {
+      let bin = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        const sub = bytes.subarray(i, i + chunk);
+        bin += String.fromCharCode.apply(null, sub);
+      }
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    async function deflateBytes(bytes) {
+      if (typeof CompressionStream !== 'function') {
+        throw new Error('CompressionStream(deflate) not supported. Use a recent Chrome/Edge/Firefox.');
+      }
+      const cs = new CompressionStream('deflate');
+      const blob = new Blob([bytes]);
+      const stream = blob.stream().pipeThrough(cs);
+      const ab = await new Response(stream).arrayBuffer();
+      return new Uint8Array(ab);
+    }
+
+    function sanitizeTitle(name) {
+      return (name || 'Checklist').replace(/\.[^.]+$/, '');
+    }
+
+    function parseGcode(text, opts) {
+      const dedupeLines = opts?.dedupeLines ?? 6;
+      const bindWindow = opts?.bindWindow ?? 50;
+
+      const PAUSE_RE = /^\s*(M600|M0|M25|PAUSE|@pause|SET_PAUSE_NEXT_LAYER|FILAMENT_CHANGE)\b/i;
+      const LAYER_RES = [
+        /^\s*;\s*LAYER\s*:\s*(\d+)\s*$/i,
+        /^\s*;\s*LAYER\s+(\d+)\s*$/i,
+        /^\s*;\s*;\s*layer\s+(\d+)\s*$/i,
+        /^\s*;\s*layer\s+(\d+)\s*$/i
+      ];
+      const Z_COMMENT_RES = [
+        /^\s*;\s*Z\s*:\s*([0-9]*\.?[0-9]+)\s*$/i,
+        /^\s*;\s*HEIGHT\s*:\s*([0-9]*\.?[0-9]+)\s*$/i
+      ];
+      const CHANGE_FILAMENT_RE = /^\s*;\s*CHANGE_FILAMENT\s+from=(.*?)\s+to=(.*?)\s*$/i;
+      const M117_CHANGE_TO_RE = /^\s*M117\s+CHANGE\s+TO\s+(.+?)\s*$/i;
+
+      function parseG1Z(line) {
+        const s = line.trimStart();
+        const up = s.toUpperCase();
+        if (!(up.startsWith('G0') || up.startsWith('G1'))) return null;
+        const m = s.match(/\bZ\s*([0-9]*\.?[0-9]+)/i);
+        if (!m) return null;
+        const v = Number(m[1]);
+        return Number.isFinite(v) ? v : null;
+      }
+
+      function cleanValue(s) {
+        s = (s || '').trim();
+        if (s.length >= 2 && ((s[0] === '"' && s[s.length-1] === '"') || (s[0] === "'" && s[s.length-1] === "'"))) {
+          s = s.slice(1, -1).trim();
+        }
+        return s;
+      }
+
+      const lines = text.split(/\r?\n/);
+      let curLayer = null;
+      let curZ = null;
+
+      let pendingFrom = null;
+      let pendingTo = null;
+      let pendingLine = null;
+
+      let lastEmitted = null;
+      const events = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const lineNo = i + 1;
+        const line = lines[i];
+
+        for (const re of LAYER_RES) {
+          const m = line.match(re);
+          if (m) { curLayer = Number(m[1]); break; }
+        }
+
+        for (const re of Z_COMMENT_RES) {
+          const m = line.match(re);
+          if (m) { curZ = Number(m[1]); break; }
+        }
+
+        const g1z = parseG1Z(line);
+        if (g1z != null) curZ = g1z;
+
+        const mcf = line.match(CHANGE_FILAMENT_RE);
+        if (mcf) {
+          pendingFrom = cleanValue(mcf[1]);
+          pendingTo = cleanValue(mcf[2]);
+          pendingLine = lineNo;
+          continue;
+        }
+
+        const mm = line.match(M117_CHANGE_TO_RE);
+        if (mm) {
+          if (pendingTo == null) {
+            pendingTo = cleanValue(mm[1]);
+            pendingLine = lineNo;
+          }
+          continue;
+        }
+
+        if (line.trimStart().startsWith(';')) continue;
+
+        if (PAUSE_RE.test(line)) {
+          const cmd = line.trim();
+
+          if (lastEmitted && lastEmitted.cmd === cmd && lastEmitted.z === curZ && (lineNo - lastEmitted.lineNo) <= dedupeLines) {
+            continue;
+          }
+
+          let useFrom = pendingFrom;
+          let useTo = pendingTo;
+
+          if (pendingLine != null && (lineNo - pendingLine) > bindWindow) {
+            useFrom = null;
+            useTo = null;
+          }
+
+          events.push({
+            i: events.length + 1,
+            z: (curZ == null ? null : Number(curZ.toFixed(3)).toString().replace(/\.?0+$/,'')),
+            layer: curLayer,
+            from: useFrom || '',
+            to: useTo || ''
+          });
+
+          lastEmitted = { z: curZ, cmd, lineNo };
+          pendingFrom = null;
+          pendingTo = null;
+          pendingLine = null;
+        }
+      }
+
+      return events;
+    }
+
+    async function encodePayload(payload) {
+      const json = JSON.stringify(payload);
+      const bytes = new TextEncoder().encode(json);
+      const deflated = await deflateBytes(bytes);
+      return b64urlEncode(deflated);
+    }
+
+    function uniqueToColors(steps) {
+      const out = [];
+      const seen = new Set();
+      for (const s of steps) {
+        const t = (s.to || '').trim();
+        if (!t) continue;
+        if (!seen.has(t)) { seen.add(t); out.push(t); }
+      }
+      return out;
+    }
+
+    function defaultViewerUrl() {
+      return 'https://downthecrop.github.io/color-change-gcode/viewer.html';
+    }
+
+    async function main() {
+      const supportsDeflate = (typeof CompressionStream === 'function') && (typeof DecompressionStream === 'function');
+      $('supportPill').textContent = supportsDeflate ? 'Deflate: OK' : 'Deflate: missing';
+      $('supportPill').style.background = supportsDeflate ? 'rgba(45,212,191,.14)' : 'rgba(251,113,133,.14)';
+      $('supportPill').style.borderColor = supportsDeflate ? 'rgba(45,212,191,.32)' : 'rgba(251,113,133,.32)';
+
+      $('viewerPath').value = defaultViewerUrl();
+
+      let fileName = '';
+      let fileText = '';
+
+      $('file').addEventListener('change', async (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        fileName = f.name || 'print.gcode';
+        fileText = await f.text();
+        $('btnMake').disabled = false;
+        $('steps').textContent = '—';
+        $('palette').textContent = '—';
+        $('notes').textContent = 'Ready.';
+        $('qrArea').style.display = 'none';
+      });
+
+      $('btnMake').addEventListener('click', async () => {
+        try {
+          if (!fileText) return;
+
+          const steps = parseGcode(fileText, { dedupeLines: 6, bindWindow: 50 });
+          $('steps').textContent = String(steps.length);
+
+          const palette = uniqueToColors(steps);
+          $('palette').textContent = palette.length ? palette.join(', ') : '—';
+
+          const notes = [];
+          if (!steps.length) notes.push('No pauses found. Are you emitting M25/M0/M600?');
+          const missingTo = steps.filter(s => !(s.to || '').trim()).length;
+          if (missingTo) notes.push(missingTo + ' step(s) missing TO color (check your injected lines).');
+          $('notes').innerHTML = notes.length ? ('<span class="warn">' + notes.join(' ') + '</span>') : '<span class="oktxt">Looks good.</span>';
+
+          const payload = {
+            v: 1,
+            title: sanitizeTitle(fileName),
+            source: fileName,
+            created: Math.floor(Date.now() / 1000),
+            steps
+          };
+
+          const token = await encodePayload(payload);
+
+          const viewerBase = ($('viewerPath').value.trim() || defaultViewerUrl()).replace(/#.*$/, '');
+          const shareUrl = viewerBase + '#d=' + token;
+
+          $('linkText').textContent = shareUrl;
+          $('qrArea').style.display = 'grid';
+
+          await QRCode.toCanvas($('qr'), shareUrl, { errorCorrectionLevel: 'M', margin: 1, width: 320 });
+
+          $('btnOpen').disabled = false;
+          $('btnOpen').onclick = () => window.open(shareUrl, '_blank', 'noopener,noreferrer');
+
+          $('btnCopy').onclick = async () => {
+            try {
+              await navigator.clipboard.writeText(shareUrl);
+              toast('Copied.');
+            } catch {
+              toast('Copy failed (clipboard blocked).');
+            }
+          };
+        } catch (err) {
+          $('qrArea').style.display = 'none';
+          $('notes').innerHTML = '<span class="warn">' + (err && err.message ? err.message : String(err)) + '</span>';
+        }
+      });
+    }
+
+    main();
+  </script>
+</body>
+</html>
