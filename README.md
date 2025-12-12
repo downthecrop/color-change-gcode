@@ -11,7 +11,7 @@ No companion app. No backend. Your G-code never leaves your machine.
 
 After GitHub Pages is enabled:
 
-- Generator: https://downthecrop.github.io/color-change-gcode/generator.html
+- Generator: https://downthecrop.github.io/color-change-gcode/index.html
 - Viewer:    https://downthecrop.github.io/color-change-gcode/viewer.html
 
 ## Repo Layout
